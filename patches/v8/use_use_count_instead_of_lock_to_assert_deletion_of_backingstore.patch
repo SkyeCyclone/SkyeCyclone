@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Samuel Attard <samuel.r.attard@gmail.com>
+Date: Mon, 26 Oct 2020 17:19:52 -0700
+Subject: use use_count() instead of lock() to assert deletion of BackingStore
+
+Per https://cplusplus.github.io/LWG/issue2751 it is not part of spec that expired() / lock() are accurate inside the deleter run by the shared_ptr (which is where the check is executed).
+
+However as per http://eel.is/c++draft/util.smartptr.shared.dest the use_count() has to be decrememented before running the deleter so use_count() == 0 implies freed in this case.  This fixes a DCHECK failure when compiling things using GetBackingStore() that do not use the same libcpp as V8 itself.
+
+Refs: https://chromium-review.googlesource.com/c/v8/v8/+/2500530
+
+diff --git a/src/objects/backing-store.cc b/src/objects/backing-store.cc
+index c67fff0fa9b5e26fc63c542f21bcaa1c48a1de39..b0e30aa7fbd40c2878cef853706d46085d0f8a37 100644
+--- a/src/objects/backing-store.cc
++++ b/src/objects/backing-store.cc
+@@ -704,7 +704,7 @@ void GlobalBackingStoreRegistry::Unregister(BackingStore* backing_store) {
+   base::MutexGuard scope_lock(&impl()->mutex_);
+   const auto& result = impl()->map_.find(backing_store->buffer_start());
+   if (result != impl()->map_.end()) {
+-    DCHECK(!result->second.lock());
++    DCHECK(result->second.use_count() == 0);
+     impl()->map_.erase(result);
+   }
+   backing_store->globally_registered_ = false;
