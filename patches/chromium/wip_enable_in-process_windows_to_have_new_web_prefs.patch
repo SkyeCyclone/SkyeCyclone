@@ -1,0 +1,409 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andy Locascio <andy@slack-corp.com>
+Date: Wed, 6 May 2020 16:37:54 -0700
+Subject: wip: enable in-process windows to have new web prefs
+
+
+diff --git a/content/browser/frame_host/interstitial_page_impl.cc b/content/browser/frame_host/interstitial_page_impl.cc
+index 7fecac21ea36670a20bc2b317cfe11eb5e0b2524..9f9a53340a6e64ab19474e8938e11aeb496ff602 100644
+--- a/content/browser/frame_host/interstitial_page_impl.cc
++++ b/content/browser/frame_host/interstitial_page_impl.cc
+@@ -796,7 +796,8 @@ RenderFrameHostDelegate* InterstitialPageImpl::CreateNewWindow(
+     const mojom::CreateNewWindowParams& params,
+     bool is_new_browsing_instance,
+     bool has_user_gesture,
+-    SessionStorageNamespace* session_storage_namespace) {
++    SessionStorageNamespace* session_storage_namespace,
++    WebPreferences* override_preferences) {
+   NOTREACHED() << "InterstitialPage does not support showing popups.";
+   return nullptr;
+ }
+diff --git a/content/browser/frame_host/interstitial_page_impl.h b/content/browser/frame_host/interstitial_page_impl.h
+index 095ae4dffb1f576a8ceefd2a4ab9f8f93473e460..e196f19c6166292883f796b22ffab37da804667f 100644
+--- a/content/browser/frame_host/interstitial_page_impl.h
++++ b/content/browser/frame_host/interstitial_page_impl.h
+@@ -131,7 +131,8 @@ class CONTENT_EXPORT InterstitialPageImpl : public InterstitialPage,
+       const mojom::CreateNewWindowParams& params,
+       bool is_new_browsing_instance,
+       bool has_user_gesture,
+-      SessionStorageNamespace* session_storage_namespace) override;
++      SessionStorageNamespace* session_storage_namespace,
++      WebPreferences* override_preferences) override;
+   void ShowCreatedWindow(int process_id,
+                          int main_frame_widget_route_id,
+                          WindowOpenDisposition disposition,
+diff --git a/content/browser/frame_host/render_frame_host_delegate.cc b/content/browser/frame_host/render_frame_host_delegate.cc
+index 4cd3417d9bba76682394acd36b26fbbdd8c459dc..40171ddda3840f810f36329c29b787ce51cfb18c 100644
+--- a/content/browser/frame_host/render_frame_host_delegate.cc
++++ b/content/browser/frame_host/render_frame_host_delegate.cc
+@@ -134,7 +134,8 @@ RenderFrameHostDelegate* RenderFrameHostDelegate::CreateNewWindow(
+     const mojom::CreateNewWindowParams& params,
+     bool is_new_browsing_instance,
+     bool has_user_gesture,
+-    SessionStorageNamespace* session_storage_namespace) {
++    SessionStorageNamespace* session_storage_namespace,
++    WebPreferences* override_prefs) {
+   return nullptr;
+ }
+ 
+diff --git a/content/browser/frame_host/render_frame_host_delegate.h b/content/browser/frame_host/render_frame_host_delegate.h
+index 1179a5588f36201c3db42cc3033fc4828906cdd3..67a8f03c2006ba15463862300d16b8eca1d9bcb0 100644
+--- a/content/browser/frame_host/render_frame_host_delegate.h
++++ b/content/browser/frame_host/render_frame_host_delegate.h
+@@ -25,6 +25,7 @@
+ #include "content/public/browser/site_instance.h"
+ #include "content/public/browser/visibility.h"
+ #include "content/public/common/javascript_dialog_type.h"
++#include "content/public/common/web_preferences.h"
+ #include "media/mojo/services/media_metrics_provider.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
+@@ -406,7 +407,8 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
+       const mojom::CreateNewWindowParams& params,
+       bool is_new_browsing_instance,
+       bool has_user_gesture,
+-      SessionStorageNamespace* session_storage_namespace);
++      SessionStorageNamespace* session_storage_namespace,
++      WebPreferences* override_preferences);
+ 
+   // Show a previously created page with the specified disposition and bounds.
+   // The window is identified by the |main_frame_widget_route_id| passed to
+diff --git a/content/browser/frame_host/render_frame_host_impl.cc b/content/browser/frame_host/render_frame_host_impl.cc
+index a0183ecd4c85a4d4c1019a108311a1c3b4499d9a..1ce3e64a23e3b58f321784194bb07fddd1056feb 100644
+--- a/content/browser/frame_host/render_frame_host_impl.cc
++++ b/content/browser/frame_host/render_frame_host_impl.cc
+@@ -4428,9 +4428,10 @@ void RenderFrameHostImpl::CreateNewWindow(
+ 
+   // The non-owning pointer |new_window| is valid in this stack frame since
+   // nothing can delete it until this thread is freed up again.
++  WebPreferences prefs = render_view_host_->GetWebkitPreferences();
+   RenderFrameHostDelegate* new_window =
+       delegate_->CreateNewWindow(this, *params, is_new_browsing_instance,
+-                                 was_consumed, cloned_namespace.get());
++                                 was_consumed, cloned_namespace.get(), &prefs);
+ 
+   if (is_new_browsing_instance || !new_window) {
+     // Opener suppressed, Javascript access disabled, or delegate did not
+@@ -4507,10 +4508,13 @@ void RenderFrameHostImpl::CreateNewWindow(
+ 
+   bool wait_for_debugger =
+       devtools_instrumentation::ShouldWaitForDebuggerInWindowOpen();
++  LOG(ERROR) << "render_frame_host_impl: color:" << prefs.background_color;
+   mojom::CreateNewWindowReplyPtr reply = mojom::CreateNewWindowReply::New(
+       main_frame->GetRenderViewHost()->GetRoutingID(),
+       main_frame->GetRoutingID(),
+-      main_frame->GetLocalRenderWidgetHost()->GetRoutingID(), visual_properties,
++      main_frame->GetLocalRenderWidgetHost()->GetRoutingID(),
++      prefs,
++      visual_properties,
+       std::move(blink_frame_widget_host),
+       std::move(blink_frame_widget_receiver), std::move(blink_widget_host),
+       std::move(blink_widget_receiver),
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index ec383524faa4ddf738c915d309d660440a095cc7..1e2a148a058ba470a88769e790cad37b78c0114e 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -1566,6 +1566,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
+       instance_weak_factory_(base::in_place, this),
+       frame_sink_provider_(id_),
+       shutdown_exit_code_(-1) {
++  LOG(ERROR) << "==== RenderProcessHostImpl::RenderProcessHostImpl";
+   widget_helper_ = new RenderWidgetHelper();
+ 
+   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID(), browser_context);
+diff --git a/content/browser/renderer_host/render_view_host_impl.cc b/content/browser/renderer_host/render_view_host_impl.cc
+index 9b364dc70d1aad0703aa62c482d7dfb19cbbe872..5ed46bfde2926e3076aacd80ef90cc79d4bd3946 100644
+--- a/content/browser/renderer_host/render_view_host_impl.cc
++++ b/content/browser/renderer_host/render_view_host_impl.cc
+@@ -313,6 +313,7 @@ bool RenderViewHostImpl::CreateRenderView(
+     const base::UnguessableToken& devtools_frame_token,
+     const FrameReplicationState& replicated_frame_state,
+     bool window_was_created_with_opener) {
++  LOG(ERROR) << "=== RenderViewHostImpl::CreateRenderView";
+   TRACE_EVENT0("renderer_host,navigation",
+                "RenderViewHostImpl::CreateRenderView");
+   DCHECK(!IsRenderViewLive()) << "Creating view twice";
+@@ -347,6 +348,7 @@ bool RenderViewHostImpl::CreateRenderView(
+       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext()).Clone();
+   RenderViewHostImpl::GetPlatformSpecificPrefs(
+       params->renderer_preferences.get());
++  LOG(ERROR) << "=== RenderViewHostImpl->GetWebkitPreferences";
+   params->web_preferences = GetWebkitPreferences();
+   params->view_id = GetRoutingID();
+   if (main_rfh) {
+diff --git a/content/browser/renderer_host/render_widget_host_view_mac.mm b/content/browser/renderer_host/render_widget_host_view_mac.mm
+index a573ff0b42f344aade85f2c62ac5fbfb251f36ef..020f10bf50f185d2c2779519bff8738452ae0002 100644
+--- a/content/browser/renderer_host/render_widget_host_view_mac.mm
++++ b/content/browser/renderer_host/render_widget_host_view_mac.mm
+@@ -201,13 +201,14 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
+         GetFrameSinkId(), this);
+   }
+ 
++  LOG(ERROR) << "====RenderWidgetHostViewMac::RenderWidgetHostViewMac";
+   RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
+   if (owner_delegate) {
+     // TODO(mostynb): actually use prefs.  Landing this as a separate CL
+     // first to rebaseline some unreliable web tests.
+     // NOTE: This will not be run for child frame widgets, which do not have
+     // an owner delegate and won't get a RenderViewHost here.
+-    ignore_result(owner_delegate->GetWebkitPreferencesForWidget());
++    // ignore_result(owner_delegate->GetWebkitPreferencesForWidget());
+   }
+ 
+   cursor_manager_.reset(new CursorManager(this));
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+index 55d8d11648ac7ac912f9c0f805d82bc908f1fe60..36c8798c33fde309cfb5602149460bdbc7b6f620 100644
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -139,7 +139,6 @@
+ #include "content/public/common/result_codes.h"
+ #include "content/public/common/url_utils.h"
+ #include "content/public/common/use_zoom_for_dsf_policy.h"
+-#include "content/public/common/web_preferences.h"
+ #include "media/base/user_input_monitor.h"
+ #include "net/base/url_util.h"
+ #include "net/http/http_cache.h"
+@@ -2059,6 +2058,7 @@ WebContents* WebContentsImpl::GetWebContents() {
+ }
+ 
+ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
++  LOG(ERROR) << "WebContentsImpl::Init";
+   // This is set before initializing the render manager since
+   // RenderFrameHostManager::Init calls back into us via its delegate to ask if
+   // it should be hidden.
+@@ -2857,7 +2857,8 @@ RenderFrameHostDelegate* WebContentsImpl::CreateNewWindow(
+     const mojom::CreateNewWindowParams& params,
+     bool is_new_browsing_instance,
+     bool has_user_gesture,
+-    SessionStorageNamespace* session_storage_namespace) {
++    SessionStorageNamespace* session_storage_namespace,
++    WebPreferences* override_preferences) {
+   DCHECK(opener);
+ 
+   int render_process_id = opener->GetProcess()->GetID();
+@@ -2926,6 +2927,8 @@ RenderFrameHostDelegate* WebContentsImpl::CreateNewWindow(
+     new_contents = base::WrapUnique(static_cast<WebContentsImpl*>(
+         GetBrowserPluginGuest()->CreateNewGuestWindow(create_params)));
+   }
++  LOG(ERROR) << "WebContentsImpl->Created";
++
+   auto* new_contents_impl = new_contents.get();
+ 
+   new_contents_impl->GetController().SetSessionStorageNamespace(
+@@ -2969,11 +2972,14 @@ RenderFrameHostDelegate* WebContentsImpl::CreateNewWindow(
+   }
+ 
+   if (delegate_) {
+-    delegate_->WebContentsCreatedWithFullParams(this, render_process_id,
+-                                                opener->GetRoutingID(),
+-                                                params, new_contents_impl);
++    delegate_->WebContentsCreatedWithFullParams(this, 0, 0, params, new_contents_impl);
+   }
+ 
++  if (delegate_) {
++    delegate_->OverrideWebkitPrefs(new_contents_impl, override_preferences);
++  }
++
++
+   for (auto& observer : observers_) {
+     observer.DidOpenRequestedURL(new_contents_impl, opener, params.target_url,
+                                  params.referrer.To<Referrer>(),
+diff --git a/content/browser/web_contents/web_contents_impl.h b/content/browser/web_contents/web_contents_impl.h
+index a176aafbf7bdf3fd4cb28e10b145074923294757..12c36eba95884cc7a80fd05cb8bfc18fb115466f 100644
+--- a/content/browser/web_contents/web_contents_impl.h
++++ b/content/browser/web_contents/web_contents_impl.h
+@@ -55,6 +55,7 @@
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/web_contents_receiver_set.h"
+ #include "content/public/common/three_d_api_types.h"
++#include "content/public/common/web_preferences.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+@@ -651,7 +652,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
+       const mojom::CreateNewWindowParams& params,
+       bool is_new_browsing_instance,
+       bool has_user_gesture,
+-      SessionStorageNamespace* session_storage_namespace) override;
++      SessionStorageNamespace* session_storage_namespace,
++      WebPreferences* override_prefs) override;
+   void ShowCreatedWindow(int process_id,
+                          int main_frame_widget_route_id,
+                          WindowOpenDisposition disposition,
+diff --git a/content/common/frame.mojom b/content/common/frame.mojom
+index 9009a8b7a23e170ab0fbf81a6d157e18fa4e1769..ca01e1622b5401dfef271e60d43a009a0394cf3b 100644
+--- a/content/common/frame.mojom
++++ b/content/common/frame.mojom
+@@ -13,6 +13,7 @@ import "content/common/navigation_params.mojom";
+ import "content/common/widget.mojom";
+ import "content/public/common/browser_controls_state.mojom";
+ import "content/public/common/transferrable_url_loader.mojom";
++import "content/public/common/web_preferences.mojom";
+ import "content/public/common/window_container_type.mojom";
+ import "mojo/public/mojom/base/string16.mojom";
+ import "mojo/public/mojom/base/unguessable_token.mojom";
+@@ -333,6 +334,8 @@ struct CreateNewWindowReply {
+   // The ID of the widget for the main frame.
+   int32 main_frame_widget_route_id;
+ 
++  WebPreferences web_preferences;
++
+   // Initial properties for the main frame RenderWidget.
+   VisualProperties visual_properties;
+ 
+diff --git a/content/public/browser/web_contents_delegate.h b/content/public/browser/web_contents_delegate.h
+index 4e3a846a3825216e1a77e17fd8e03331c6fb927b..f8a2ed8f832f783813d71dd6d87b829fd6414362 100644
+--- a/content/public/browser/web_contents_delegate.h
++++ b/content/public/browser/web_contents_delegate.h
+@@ -309,6 +309,10 @@ class CONTENT_EXPORT WebContentsDelegate {
+       const std::string& frame_name,
+       const GURL& target_url);
+ 
++  virtual void OverrideWebkitPrefs(
++      content::WebContents* new_web_contents,
++      content::WebPreferences* prefs) {}
++
+   // Allow delegate to creates a custom WebContents when
+   // WebContents::CreateNewWindow() is called. This function is only called
+   // when IsWebContentsCreationOverridden() returns true.
+diff --git a/content/public/common/common_param_traits_macros.h b/content/public/common/common_param_traits_macros.h
+index 0e67ad3c7431658171ef44b05433459332c9b28c..a6ddab254ea674614330792274254a45e01e65c6 100644
+--- a/content/public/common/common_param_traits_macros.h
++++ b/content/public/common/common_param_traits_macros.h
+@@ -132,6 +132,26 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
+   IPC_STRUCT_TRAITS_MEMBER(webgl2_enabled)
+   IPC_STRUCT_TRAITS_MEMBER(pepper_3d_enabled)
+   IPC_STRUCT_TRAITS_MEMBER(record_whole_document)
++
++  IPC_STRUCT_TRAITS_MEMBER(preloads)
++  IPC_STRUCT_TRAITS_MEMBER(disable_electron_site_instance_overrides)
++  IPC_STRUCT_TRAITS_MEMBER(background_color)
++  IPC_STRUCT_TRAITS_MEMBER(opener_id)
++  IPC_STRUCT_TRAITS_MEMBER(context_isolation)
++  IPC_STRUCT_TRAITS_MEMBER(enable_remote_module)
++  IPC_STRUCT_TRAITS_MEMBER(guest_instance_id)
++  IPC_STRUCT_TRAITS_MEMBER(hidden_page)
++  IPC_STRUCT_TRAITS_MEMBER(offscreen)
++  IPC_STRUCT_TRAITS_MEMBER(preload)
++  IPC_STRUCT_TRAITS_MEMBER(native_window_open)
++  IPC_STRUCT_TRAITS_MEMBER(node_integration)
++  IPC_STRUCT_TRAITS_MEMBER(node_integration_in_worker)
++  IPC_STRUCT_TRAITS_MEMBER(node_leakage_in_renderers)
++  IPC_STRUCT_TRAITS_MEMBER(node_integration_in_sub_frames)
++  IPC_STRUCT_TRAITS_MEMBER(enable_spellcheck)
++  IPC_STRUCT_TRAITS_MEMBER(enable_plugins)
++  IPC_STRUCT_TRAITS_MEMBER(webview_tag)
++
+   IPC_STRUCT_TRAITS_MEMBER(flash_3d_enabled)
+   IPC_STRUCT_TRAITS_MEMBER(flash_stage3d_enabled)
+   IPC_STRUCT_TRAITS_MEMBER(flash_stage3d_baseline_enabled)
+diff --git a/content/public/common/web_preferences.h b/content/public/common/web_preferences.h
+index 6c6420ec70bf0208135b08b00fcfb4897ff06c68..655963a47dbd8c6df444cdb4b9637a7c6ed5364c 100644
+--- a/content/public/common/web_preferences.h
++++ b/content/public/common/web_preferences.h
+@@ -184,6 +184,25 @@ struct CONTENT_EXPORT WebPreferences {
+   blink::mojom::V8CacheOptions v8_cache_options;
+   bool record_whole_document;
+ 
++  std::string preloads;
++  bool disable_electron_site_instance_overrides;
++  std::string background_color;
++  int opener_id;
++  bool context_isolation;
++  bool enable_remote_module;
++  int guest_instance_id;
++  bool hidden_page;
++  bool offscreen;
++  std::string preload;
++  bool native_window_open;
++  bool node_integration;
++  bool node_integration_in_worker;
++  bool node_leakage_in_renderers;
++  bool node_integration_in_sub_frames;
++  bool enable_spellcheck;
++  bool enable_plugins;
++  bool webview_tag;
++
+   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
+   // only controls whether or not the "document.cookie" field is properly
+   // connected to the backing store, for instance if you wanted to be able to
+diff --git a/content/renderer/render_view_impl.cc b/content/renderer/render_view_impl.cc
+index 507f565898b15701e05224949bc6cf7360c275ba..d732fbefc1ce03ef6bd916a9309dadd00dde2a87 100644
+--- a/content/renderer/render_view_impl.cc
++++ b/content/renderer/render_view_impl.cc
+@@ -158,6 +158,7 @@
+ #include "url/origin.h"
+ #include "url/url_constants.h"
+ #include "v8/include/v8.h"
++#include "base/debug/stack_trace.h"
+ 
+ #if defined(OS_ANDROID)
+ #include <cpu-features.h>
+@@ -423,6 +424,8 @@ RenderViewImpl::RenderViewImpl(CompositorDependencies* compositor_deps,
+       compositor_deps_(compositor_deps),
+       webkit_preferences_(params.web_preferences),
+       session_storage_namespace_id_(params.session_storage_namespace_id) {
++  LOG(ERROR) << "RenderViewImpl::RenderViewImpl";
++  // base::debug::StackTrace().Print();
+   DCHECK(!session_storage_namespace_id_.empty())
+       << "Session storage namespace must be populated.";
+   // Please put all logic in RenderViewImpl::Initialize().
+@@ -1218,6 +1221,8 @@ WebView* RenderViewImpl::CreateView(
+     const blink::SessionStorageNamespaceId& session_storage_namespace_id) {
+   RenderFrameImpl* creator_frame = RenderFrameImpl::FromWebFrame(creator);
+   mojom::CreateNewWindowParamsPtr params = mojom::CreateNewWindowParams::New();
++  LOG(ERROR) << "RenderViewImpl::CreateView";
++  base::debug::StackTrace().Print();
+ 
+   // The user activation check is done at the browser process through
+   // |frame_host->CreateNewWindow()| call below.  But the extensions case
+@@ -1302,9 +1307,12 @@ WebView* RenderViewImpl::CreateView(
+   view_params->opener_frame_route_id = creator_frame->GetRoutingID();
+   DCHECK_EQ(GetRoutingID(), creator_frame->render_view()->GetRoutingID());
+ 
++  LOG(ERROR) << "render_view_impl: color: " << reply->web_preferences.background_color;
++  LOG(ERROR) << "render_view_impl: text_track_window_color: " << reply->web_preferences.text_track_window_color;
++
+   view_params->window_was_created_with_opener = true;
+   view_params->renderer_preferences = renderer_preferences_.Clone();
+-  view_params->web_preferences = webkit_preferences_;
++  view_params->web_preferences = reply->web_preferences;
+   view_params->view_id = reply->route_id;
+   view_params->main_frame_routing_id = reply->main_frame_route_id;
+   view_params->frame_widget_host = std::move(reply->frame_widget_host);
+@@ -1690,6 +1698,7 @@ void RenderViewImpl::ApplyPageVisibilityState(
+ }
+ 
+ void RenderViewImpl::OnUpdateWebPreferences(const WebPreferences& prefs) {
++  LOG(ERROR) << "===RenderViewImpl::OnUpdateWebPreferences";
+   webkit_preferences_ = prefs;
+   ApplyWebPreferences(webkit_preferences_, GetWebView());
+   ApplyCommandLineToSettings(GetWebView()->GetSettings());
+diff --git a/content/test/test_web_contents.cc b/content/test/test_web_contents.cc
+index 69f4722c4a518cd549fd5d6f622a044be29f0ff1..a68b8de5c8dfa1ee5373b02d3c3a62492709d3ac 100644
+--- a/content/test/test_web_contents.cc
++++ b/content/test/test_web_contents.cc
+@@ -381,7 +381,8 @@ RenderFrameHostDelegate* TestWebContents::CreateNewWindow(
+     const mojom::CreateNewWindowParams& params,
+     bool is_new_browsing_instance,
+     bool has_user_gesture,
+-    SessionStorageNamespace* session_storage_namespace) {
++    SessionStorageNamespace* session_storage_namespace,
++    WebPreferences* override_preferences) {
+   return nullptr;
+ }
+ 
+diff --git a/content/test/test_web_contents.h b/content/test/test_web_contents.h
+index b54c2e4e861fab21fe2b4e8e2fda7518ebec8972..e2e19c5e42ee634f376dd2dd814acf66f22f2b66 100644
+--- a/content/test/test_web_contents.h
++++ b/content/test/test_web_contents.h
+@@ -176,7 +176,8 @@ class TestWebContents : public WebContentsImpl, public WebContentsTester {
+       const mojom::CreateNewWindowParams& params,
+       bool is_new_browsing_instance,
+       bool has_user_gesture,
+-      SessionStorageNamespace* session_storage_namespace) override;
++      SessionStorageNamespace* session_storage_namespace,
++      WebPreferences* override_preferences) override;
+   void CreateNewWidget(int32_t render_process_id,
+                        int32_t route_id,
+                        mojo::PendingRemote<mojom::Widget> widget,
