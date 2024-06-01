@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cheng Zhao <zcbenz@gmail.com>
+Date: Thu, 20 Sep 2018 17:45:47 -0700
+Subject: disable_hidden.patch
+
+Electron uses this to disable background throttling for hidden windows.
+
+diff --git a/content/browser/renderer_host/render_widget_host_impl.cc b/content/browser/renderer_host/render_widget_host_impl.cc
+index 1bce7961d24d29cf8d14c8f7646e88e5f9d72ee6..bf6baff690af930acf19c2a544c8f00ab492bb8e 100644
+--- a/content/browser/renderer_host/render_widget_host_impl.cc
++++ b/content/browser/renderer_host/render_widget_host_impl.cc
+@@ -667,6 +667,9 @@ void RenderWidgetHostImpl::WasHidden() {
+   if (is_hidden_)
+     return;
+ 
++  if (disable_hidden_)
++    return;
++
+   RejectMouseLockOrUnlockIfNecessary(
+       blink::mojom::PointerLockResult::kWrongDocument);
+ 
+diff --git a/content/browser/renderer_host/render_widget_host_impl.h b/content/browser/renderer_host/render_widget_host_impl.h
+index 8ead45fa9273d1d7971b7e0c29bc973adc362838..4e5979aeca7509736d35f5f9cdbcc16a66fd9f42 100644
+--- a/content/browser/renderer_host/render_widget_host_impl.h
++++ b/content/browser/renderer_host/render_widget_host_impl.h
+@@ -177,6 +177,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
+   // RenderWidgetHostImpl.
+   static RenderWidgetHostImpl* From(RenderWidgetHost* rwh);
+ 
++  // Electron: Prevents the widget from getting hidden.
++  bool disable_hidden_ = false;
++
+   void set_new_content_rendering_delay_for_testing(
+       const base::TimeDelta& delay) {
+     new_content_rendering_delay_ = delay;
+diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
+index 0edc16351ec6856bb1b3010905ebff4cf7f1b2a3..a73d370bf2475a112790ba7c02d8d8d3ba9febff 100644
+--- a/content/browser/renderer_host/render_widget_host_view_aura.cc
++++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
+@@ -623,7 +623,7 @@ void RenderWidgetHostViewAura::HideImpl() {
+   DCHECK(visibility_ == Visibility::HIDDEN ||
+          visibility_ == Visibility::OCCLUDED);
+ 
+-  if (!host()->is_hidden()) {
++  if (!host()->is_hidden() && !host()->disable_hidden_) {
+     host()->WasHidden();
+     aura::WindowTreeHost* host = window_->GetHost();
+     if (delegated_frame_host_) {
