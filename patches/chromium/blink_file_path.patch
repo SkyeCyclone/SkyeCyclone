@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cheng Zhao <zcbenz@gmail.com>
+Date: Thu, 20 Sep 2018 17:45:00 -0700
+Subject: blink_file_path.patch
+
+This is used by editors to obtain the filesystem path from a dragged file. See
+documentation at https://electronjs.org/docs/api/file-object
+
+diff --git a/third_party/blink/renderer/core/fileapi/file.h b/third_party/blink/renderer/core/fileapi/file.h
+index 7ea8ad8fd162fd6a97052188a8e8868dab1c1fe9..a64966e2db0e2e7b0390a322525522e05ddbb022 100644
+--- a/third_party/blink/renderer/core/fileapi/file.h
++++ b/third_party/blink/renderer/core/fileapi/file.h
+@@ -193,6 +193,9 @@ class CORE_EXPORT File final : public Blob {
+   }
+   const String& name() const { return name_; }
+ 
++  // Getter for the path IDL attribute.
++  const String& path() const { return GetPath(); }
++
+   // Getter for the lastModified IDL attribute,
+   // http://dev.w3.org/2006/webapi/FileAPI/#file-attrs
+   int64_t lastModified() const;
+diff --git a/third_party/blink/renderer/core/fileapi/file.idl b/third_party/blink/renderer/core/fileapi/file.idl
+index e5cf6cc926ff2670f713018dd750e79c53ee76eb..60eca3cf100b31c3d2c0c68271d98c60321e69a7 100644
+--- a/third_party/blink/renderer/core/fileapi/file.idl
++++ b/third_party/blink/renderer/core/fileapi/file.idl
+@@ -32,6 +32,7 @@
+     Serializable
+ ] interface File : Blob {
+     readonly attribute DOMString name;
++    readonly attribute DOMString path;
+     readonly attribute long long lastModified;
+ 
+     // Non-standard APIs
