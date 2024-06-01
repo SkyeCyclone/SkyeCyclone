@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Erick Zhao <ezhao@slack-corp.com>
+Date: Wed, 29 Jan 2020 14:21:15 -0800
+Subject: fix: add executable to chromedriver's rpath for electron 8+
+
+Chromedriver errors on startup for Electron 8+ because FFmpeg
+is not included. Adding the executable path to rpath fixes the
+issue.
+
+This is in patch form rather than copying the executable command
+in Electron's BUILD.gn because one of Chromedriver's deps
+(//net/server:http_server) hsa a visibility list that Electron
+is not on.
+
+diff --git a/chrome/test/chromedriver/BUILD.gn b/chrome/test/chromedriver/BUILD.gn
+index 2caa79d19ed0e6a16c39086ebb5e049eb50959be..f1db93f7da98f59c115acac2d22ea003d14a8b20 100644
+--- a/chrome/test/chromedriver/BUILD.gn
++++ b/chrome/test/chromedriver/BUILD.gn
+@@ -331,6 +331,13 @@ executable("chromedriver") {
+     "//net/traffic_annotation:test_support",
+     "//services/network/public/mojom",
+   ]
++  # Fixes bad rpath on Electron 8+
++  if (is_mac) {
++    ldflags = [
++      "-rpath",
++      "@executable_path/.",
++    ]
++  }
+ }
+ 
+ python_library("chromedriver_py_tests") {
