@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Samuel Attard <marshallofsound@electronjs.org>
+Date: Mon, 6 Jul 2020 17:44:34 -0700
+Subject: chore: add zlib patch for cpu_check_features
+
+This is something chromium folks missed and will either be upstreamed or they'll figure it out quite quickly.
+
+diff --git a/third_party/zlib/cpu_features.c b/third_party/zlib/cpu_features.c
+index 562854975b2400cf0050e142ba5fc2972e06e597..75e7689d996942dfb8f74c3da38014a67845e8ae 100644
+--- a/third_party/zlib/cpu_features.c
++++ b/third_party/zlib/cpu_features.c
+@@ -56,6 +56,10 @@ int ZLIB_INTERNAL x86_cpu_enable_simd = 0;
+ static void _cpu_check_features(void);
+ #endif
+ 
++#if defined(ARMV8_OS_MACOS)
++void ZLIB_INTERNAL cpu_check_features(void) {}
++#endif
++
+ #if defined(ARMV8_OS_ANDROID) || defined(ARMV8_OS_LINUX) || defined(ARMV8_OS_FUCHSIA) || defined(X86_NOT_WINDOWS)
+ static pthread_once_t cpu_check_inited_once = PTHREAD_ONCE_INIT;
+ void ZLIB_INTERNAL cpu_check_features(void)
