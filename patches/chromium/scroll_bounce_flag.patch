@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cheng Zhao <zcbenz@gmail.com>
+Date: Thu, 20 Sep 2018 17:49:03 -0700
+Subject: scroll_bounce_flag.patch
+
+Patch to make scrollBounce option work.
+
+diff --git a/content/renderer/render_thread_impl.cc b/content/renderer/render_thread_impl.cc
+index 33ab18228d821c1d3a8361463db7f55727500309..c4462aec2f2bf1aa4b8bf7fcb21415888b658323 100644
+--- a/content/renderer/render_thread_impl.cc
++++ b/content/renderer/render_thread_impl.cc
+@@ -1345,7 +1345,7 @@ bool RenderThreadImpl::IsGpuMemoryBufferCompositorResourcesEnabled() {
+ }
+ 
+ bool RenderThreadImpl::IsElasticOverscrollEnabled() {
+-  return is_elastic_overscroll_enabled_;
++  return base::CommandLine::ForCurrentProcess()->HasSwitch("scroll-bounce");
+ }
+ 
+ bool RenderThreadImpl::IsUseZoomForDSFEnabled() {
