@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Shelley Vohr <shelley.vohr@gmail.com>
+Date: Wed, 21 Aug 2019 11:06:16 -0700
+Subject: FIXME: use redefined version of internalModuleStat
+
+Instantiate redefined version of the internalModuleStat function
+(see lib/common/asar.js in the electron/electron repo). For some reason
+this has to be done after the upgrade to the Node.js v8.7.0.  in the very beginning of the file holds a reference
+to a native Node.js implementation of the function.
+
+diff --git a/lib/internal/modules/cjs/loader.js b/lib/internal/modules/cjs/loader.js
+index 2a92651dd6c5a98990b0f9e996b97c3e73095d50..33f52a3c168840ea88da0e032069136e8a690830 100644
+--- a/lib/internal/modules/cjs/loader.js
++++ b/lib/internal/modules/cjs/loader.js
+@@ -145,6 +145,8 @@ function enrichCJSError(err) {
+ }
+ 
+ function stat(filename) {
++  // FIXME(codebytere): determine why this needs to be done and remove
++  const internalModuleStat = process.binding('fs').internalModuleStat;
+   filename = path.toNamespacedPath(filename);
+   if (statCache !== null) {
+     const result = statCache.get(filename);
