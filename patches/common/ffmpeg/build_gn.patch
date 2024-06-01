@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ales Pergl <alpergl@microsoft.com>
+Date: Mon, 22 Oct 2018 10:45:25 -0700
+Subject: build_gn.patch
+
+Chromium's Mac toolchain sets the "install_name" linker parameter only
+when "is_component_build" is true, but we want to set even if it's false,
+because we are making a dylib which will be distributed inside a bundle.
+
+diff --git a/BUILD.gn b/BUILD.gn
+index 1f11a9731dec49be8f56fae39faad896fb2a48c7..1a6aa50c00262cbb581769ea8a9845caab44c1bc 100755
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -422,6 +422,10 @@ if (is_component_ffmpeg) {
+     # So we can append below and assume they're defined.
+     ldflags = []
+ 
++    if (!is_component_build && is_mac) {
++      ldflags += [ "-Wl,-install_name,@rpath/libffmpeg.dylib" ]
++    }
++
+     if (is_fuchsia || (is_posix && !is_mac)) {
+       # Fixes warnings PIC relocation when building as component.
+       ldflags += [
