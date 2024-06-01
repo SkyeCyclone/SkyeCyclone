@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Samuel Attard <sattard@atlassian.com>
+Date: Fri, 26 Oct 2018 15:35:13 +1100
+Subject: fix: expose tracing::Agent and use tracing::TracingController instead
+ of v8::TracingController
+
+diff --git a/src/api/environment.cc b/src/api/environment.cc
+index 9a2661ce8b6146a73b910444a49e01e20c8d96e5..5110c9f754f7653261f7de6d5f0c35e541880a4d 100644
+--- a/src/api/environment.cc
++++ b/src/api/environment.cc
+@@ -472,6 +472,10 @@ MultiIsolatePlatform* GetMultiIsolatePlatform(IsolateData* env) {
+   return env->platform();
+ }
+ 
++node::tracing::Agent* CreateAgent() {
++  return new node::tracing::Agent();
++}
++
+ MultiIsolatePlatform* CreatePlatform(
+     int thread_pool_size,
+     node::tracing::TracingController* tracing_controller) {
+diff --git a/src/node.h b/src/node.h
+index 7340d1a6f0cf2f912aaee15d66ed137fe2870bab..b9493d1f3d5b4f192609f1e7529715ec30ab46e2 100644
+--- a/src/node.h
++++ b/src/node.h
+@@ -125,6 +125,7 @@ namespace node {
+ 
+ namespace tracing {
+ 
++class Agent;
+ class TracingController;
+ 
+ }
+@@ -512,6 +513,8 @@ NODE_DEPRECATED("Use GetMultiIsolatePlatform(env) instead",
+ NODE_EXTERN MultiIsolatePlatform* GetMultiIsolatePlatform(Environment* env);
+ NODE_EXTERN MultiIsolatePlatform* GetMultiIsolatePlatform(IsolateData* env);
+ 
++NODE_EXTERN node::tracing::Agent* CreateAgent();
++
+ // Legacy variants of MultiIsolatePlatform::Create().
+ NODE_DEPRECATED("Use variant taking a v8::TracingController* pointer instead",
+     NODE_EXTERN MultiIsolatePlatform* CreatePlatform(
