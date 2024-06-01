@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andy Locascio <andy@slack-corp.com>
+Date: Mon, 24 Feb 2020 14:52:25 -0800
+Subject: port ARIA tree fix for macOS VoiceOver
+
+Port a CL that fixes the ARIA tree implementation so that voiceover can
+correctly announce tree items.
+
+CL: https://chromium-review.googlesource.com/c/chromium/src/+/2062913
+
+diff --git a/content/browser/accessibility/browser_accessibility_cocoa.h b/content/browser/accessibility/browser_accessibility_cocoa.h
+index a5529ac8841b79f230f0fa8eae2b3cb226beb7d7..2e9ca33ccce50e7ca2552991e55878ca33e59bac 100644
+--- a/content/browser/accessibility/browser_accessibility_cocoa.h
++++ b/content/browser/accessibility/browser_accessibility_cocoa.h
+@@ -75,6 +75,8 @@ struct AXTextEdit {
+ // left).
+ - (NSRect)rectInScreen:(gfx::Rect)rect;
+ 
++- (void)getTreeItemDescendants:(NSMutableArray*)tree_items;
++
+ // Return the method name for the given attribute. For testing only.
+ - (NSString*)methodNameForAttribute:(NSString*)attribute;
+ 
+diff --git a/content/browser/accessibility/browser_accessibility_cocoa.mm b/content/browser/accessibility/browser_accessibility_cocoa.mm
+index 917660269257bb51716e902d5ad70578793a4bb1..225d333884302310c8c4c0289043d8caad406c84 100644
+--- a/content/browser/accessibility/browser_accessibility_cocoa.mm
++++ b/content/browser/accessibility/browser_accessibility_cocoa.mm
+@@ -2090,7 +2090,9 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
+     return nil;
+   NSMutableArray* ret = [[[NSMutableArray alloc] init] autorelease];
+ 
+-  if (ui::IsTableLike(owner_->GetRole())) {
++  if (owner_->GetRole() == ax::mojom::Role::kTree) {
++    [self getTreeItemDescendants:ret];
++  } else if (ui::IsTableLike(owner_->GetRole())) {
+     for (BrowserAccessibilityCocoa* child in [self children]) {
+       if ([[child role] isEqualToString:NSAccessibilityRowRole])
+         [ret addObject:child];
+@@ -2509,6 +2511,19 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
+   return manager->GetWindow();
+ }
+ 
++- (void)getTreeItemDescendants:(NSMutableArray*)tree_items {
++  for (auto it = owner_->PlatformChildrenBegin();
++       it != owner_->PlatformChildrenEnd(); ++it) {
++    const BrowserAccessibilityCocoa* child =
++        ToBrowserAccessibilityCocoa(it.get());
++
++    if ([child internalRole] == ax::mojom::Role::kTreeItem) {
++      [tree_items addObject:child];
++    }
++    [child getTreeItemDescendants:tree_items];
++  }
++}
++
+ - (NSString*)methodNameForAttribute:(NSString*)attribute {
+   return [attributeToMethodNameMap objectForKey:attribute];
+ }
