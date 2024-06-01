@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: deepak1556 <hop2deep@gmail.com>
+Date: Tue, 9 Jun 2020 22:01:33 -0700
+Subject: build: fix target for win cross-compilation
+
+Should be upstreamed.
+
+diff --git a/BUILD.gn b/BUILD.gn
+index 595cd84b09ca5c411e5bbd5ff43cf41e34f639df..9c0fc01c5d94b9b717d28d89a7bd669792c99050 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -137,7 +137,7 @@ if (!is_android) {
+     configs -= vulkan_undefine_configs
+   }
+ 
+-  if (is_linux && vulkan_loader_shared) {
++  if ((is_linux && target_os != "win") && vulkan_loader_shared) {
+     copy("libvulkan-abi1") {
+       sources = [ "${root_out_dir}/libvulkan.so" ]
+       outputs = [ "${root_out_dir}/libvulkan.so.1" ]
