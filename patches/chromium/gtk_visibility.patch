@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jeremy Apthorp <nornagon@nornagon.net>
+Date: Thu, 20 Sep 2018 17:48:38 -0700
+Subject: gtk_visibility.patch
+
+Allow electron to depend on GTK in the GN build.
+
+diff --git a/build/config/linux/gtk/BUILD.gn b/build/config/linux/gtk/BUILD.gn
+index 27cf4bb38f8d902927338e29e6e57c688eb77172..1f774f243324211f1e786bd78b857666661f69b6 100644
+--- a/build/config/linux/gtk/BUILD.gn
++++ b/build/config/linux/gtk/BUILD.gn
+@@ -25,6 +25,8 @@ group("gtk") {
+     # This is the only target in Chrome that should depend on GTK.
+     "//chrome/browser/ui/gtk:*",
+ 
++    "//electron:*",
++
+     # These are all for WebRTC.
+     "//examples:peerconnection_client",
+     "//remoting/host/linux",
