@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Samuel Attard <sattard@slack-corp.com>
+Date: Sun, 1 Mar 2020 16:33:55 -0800
+Subject: feat: allow embedders to add observers on created hunspell
+ dictionaries
+
+diff --git a/chrome/browser/spellchecker/spellcheck_service.cc b/chrome/browser/spellchecker/spellcheck_service.cc
+index 69a1dd21df96a5e4a727d568bde91e80d6eb1ee0..717d9c4da5ff4550b1e769bbe5347247ca596006 100644
+--- a/chrome/browser/spellchecker/spellcheck_service.cc
++++ b/chrome/browser/spellchecker/spellcheck_service.cc
+@@ -426,6 +426,9 @@ void SpellcheckService::LoadDictionaries() {
+         std::make_unique<SpellcheckHunspellDictionary>(
+             dictionary, platform_spellcheck_language, context_, this));
+     hunspell_dictionaries_.back()->AddObserver(this);
++    if (hunspell_observer_) {
++      hunspell_dictionaries_.back()->AddObserver(hunspell_observer_);
++    }
+     hunspell_dictionaries_.back()->Load();
+   }
+ 
+@@ -458,6 +461,20 @@ SpellcheckService::GetHunspellDictionaries() {
+   return hunspell_dictionaries_;
+ }
+ 
++void SpellcheckService::SetHunspellObserver(SpellcheckHunspellDictionary::Observer* observer) {
++  if (hunspell_observer_) {
++    for (auto& dict : hunspell_dictionaries_) {
++      dict->RemoveObserver(hunspell_observer_);
++    }
++  }
++  if (observer) {
++    for (auto& dict : hunspell_dictionaries_) {
++      dict->AddObserver(observer);
++    }
++  }
++  hunspell_observer_ = observer;
++}
++
+ bool SpellcheckService::LoadExternalDictionary(std::string language,
+                                                std::string locale,
+                                                std::string path,
+diff --git a/chrome/browser/spellchecker/spellcheck_service.h b/chrome/browser/spellchecker/spellcheck_service.h
+index 4c3d45d9ce6a14093126fbeb353d73124c7dff31..e3aabdc075b23ea38124de2e9b7cd80834d75b41 100644
+--- a/chrome/browser/spellchecker/spellcheck_service.h
++++ b/chrome/browser/spellchecker/spellcheck_service.h
+@@ -126,6 +126,8 @@ class SpellcheckService : public KeyedService,
+   const std::vector<std::unique_ptr<SpellcheckHunspellDictionary>>&
+   GetHunspellDictionaries();
+ 
++  void SetHunspellObserver(SpellcheckHunspellDictionary::Observer* observer);
++
+   // Load a dictionary from a given path. Format specifies how the dictionary
+   // is stored. Return value is true if successful.
+   bool LoadExternalDictionary(std::string language,
+@@ -298,6 +300,8 @@ class SpellcheckService : public KeyedService,
+   // A pointer to the BrowserContext which this service refers to.
+   content::BrowserContext* context_;
+ 
++  SpellcheckHunspellDictionary::Observer* hunspell_observer_ = nullptr;
++
+   std::unique_ptr<SpellCheckHostMetrics> metrics_;
+ 
+   std::unique_ptr<SpellcheckCustomDictionary> custom_dictionary_;
